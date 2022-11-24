@@ -58,29 +58,40 @@ void pageRank(Graph g, double* solution, double damping, double convergence)
     bool converged = false;
     double* scores1 = (double*) malloc(sizeof(double) * numNodes);
     double* scores2 = (double*) malloc(sizeof(double) * numNodes);
+    double* score_diffs = (double*) malloc(sizeof(double) * numNodes);
+
     std::vector<Vertex> no_outgoing;
+    #pragma omp parallel for schedule(dynamic, 3u)
     for (int i = 0; i < numNodes; i++) {
         if (!outgoing_size(g, i)) {
-            no_outgoing.push_back(i);
+            #pragma omp critical
+            {
+                no_outgoing.push_back(i);
+            }
         }
     }
 
+    #pragma omp parallel for schedule(dynamic, 32)
     for (int i = 0; i < numNodes; i++) {
         scores1[i] = equal_prob;
-        scores2[i] = 0;
+        score_diffs[i] = 0;
     }
 
-    int iter = 0;
+    double global_diff;
     while (!converged) {
-        double global_diff = 0;
+        global_diff = 0;
+
+        #pragma omp parallel for schedule(dynamic, 32)
         for (int i = 0; i < numNodes; i++) {
             double new_score = 0;
 
-            // sum over all nodes vj reachable from incoming edges
-            const Vertex* start = incoming_begin(g, i);
-            const Vertex* end = incoming_end(g, i);
-            for (const Vertex* in_v = start; in_v != end; in_v++) {
-                new_score += scores1[*in_v] / outgoing_size(g, *in_v);
+            if (incoming_size(g, i)) {
+                // sum over all nodes vj reachable from incoming edges
+                const Vertex* start = incoming_begin(g, i);
+                const Vertex* end = incoming_end(g, i);
+                for (const Vertex* in_v = start; in_v != end; in_v++) {
+                    new_score += scores1[*in_v] / outgoing_size(g, *in_v);
+                }
             }
 
             new_score = (damping * new_score) + (1 - damping) / numNodes;
@@ -89,21 +100,27 @@ void pageRank(Graph g, double* solution, double damping, double convergence)
             for (int j = 0; j < no_outgoing.size(); j++) {
                 new_score += damping * scores1[no_outgoing[j]] / numNodes;
             }
+
             scores2[i] = new_score;
-            global_diff += abs(scores2[i] - scores1[i]);
+            score_diffs[i] = abs(new_score - scores1[i]);
         }
 
-        // old_scores = new_scores
+        // accumulate diffs
+        #pragma omp parallel for reduction(+:global_diff) schedule(dynamic, 32)
         for (int i = 0; i < numNodes; i++) {
+            global_diff += score_diffs[i];
             scores1[i] = scores2[i];
         }
+
         converged = global_diff < convergence;
-        iter++;
     }
 
+    #pragma omp parallel for schedule(dynamic, 32)
     for (int i = 0; i < numNodes; i++) {
-        solution[i] = scores2[i];
+        solution[i] = scores1[i];
     }
+
     free(scores1);
     free(scores2);
+    free(score_diffs);
 }
