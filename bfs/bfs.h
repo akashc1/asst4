@@ -19,6 +19,14 @@ struct vertex_set {
   int *vertices;
 };
 
+struct vertex_inclusion_set {
+  // # of vertices in the set
+  int count;
+  // max size of buffer vertices
+  int max_vertices;
+  // array of vertex ids in set
+  bool *vertices;
+};
 
 void bfs_top_down(Graph graph, solution* sol);
 void bfs_bottom_up(Graph graph, solution* sol);
