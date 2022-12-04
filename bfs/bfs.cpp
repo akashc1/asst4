@@ -22,6 +22,19 @@ void vertex_set_init(vertex_set* list, int count) {
     vertex_set_clear(list);
 }
 
+void vertex_inclusion_set_clear(vertex_inclusion_set* list) {
+    list->count = 0;
+    for (int i = 0; i < list->max_vertices; i++) {
+        list->vertices[i] = false;
+    }
+}
+
+void vertex_inclusion_set_init(vertex_inclusion_set* list, int count) {
+    list->max_vertices = count;
+    list->vertices = (bool*)malloc(sizeof(bool) * list->max_vertices);
+    vertex_inclusion_set_clear(list);
+}
+
 // Take one step of "top-down" BFS.  For each vertex on the frontier,
 // follow all outgoing edges, and add all neighboring vertices to the
 // new_frontier.
@@ -85,7 +98,6 @@ void bfs_top_down(Graph graph, solution* sol) {
     vertex_set* frontier = &list1;
     vertex_set* new_frontier = &list2;
 
-
     // initialize all nodes to NOT_VISITED
     #pragma omp parallel for
     for (int i=0; i<graph->num_nodes; i++)
@@ -94,8 +106,6 @@ void bfs_top_down(Graph graph, solution* sol) {
     // setup frontier with the root node
     frontier->vertices[frontier->count++] = ROOT_NODE_ID;
     sol->distances[ROOT_NODE_ID] = 0;
-
-    int iters = 1;
 
     while (frontier->count != 0) {
 
@@ -115,23 +125,69 @@ void bfs_top_down(Graph graph, solution* sol) {
         vertex_set* tmp = frontier;
         frontier = new_frontier;
         new_frontier = tmp;
-        iters++;
+    }
+}
+
+void bottom_up_step(
+    Graph g,
+    vertex_inclusion_set* frontier,
+    vertex_inclusion_set* new_frontier,
+    int* distances)
+{
+    for (int n = 0; n < g->num_nodes; n++) {
+        if (distances[n] != NOT_VISITED_MARKER) {
+            continue;
+        }
+
+        int start_edge = g->incoming_starts[n];
+        int end_edge = (n== g->num_nodes - 1) ? g->num_edges : g->incoming_starts[n + 1];
+
+        for (int neighbor = start_edge; neighbor < end_edge; neighbor++) {
+            int incoming = g->incoming_edges[neighbor];
+            if (frontier->vertices[incoming]) {
+                new_frontier->vertices[n] = true;
+                distances[n] = distances[incoming] + 1;
+                break;
+            }
+        }
     }
 }
 
 void bfs_bottom_up(Graph graph, solution* sol)
 {
-    // CS149 students:
-    //
-    // You will need to implement the "bottom up" BFS here as
-    // described in the handout.
-    //
-    // As a result of your code's execution, sol.distances should be
-    // correctly populated for all nodes in the graph.
-    //
-    // As was done in the top-down case, you may wish to organize your
-    // code by creating subroutine bottom_up_step() that is called in
-    // each step of the BFS process.
+    vertex_inclusion_set list1, list2;
+    vertex_inclusion_set_init(&list1, graph->num_nodes);
+    vertex_inclusion_set_init(&list2, graph->num_nodes);
+
+    vertex_inclusion_set* frontier = &list1;
+    vertex_inclusion_set* new_frontier = &list2;
+
+    // initialize all nodes to NOT_VISITED
+    for (int i=0; i<graph->num_nodes; i++)
+        sol->distances[i] = NOT_VISITED_MARKER;
+
+    // setup frontier with the root node
+    frontier->vertices[ROOT_NODE_ID] = true;
+    frontier->count++;
+    sol->distances[ROOT_NODE_ID] = 0;
+
+    while (frontier->count != 0) {
+
+        vertex_inclusion_set_clear(new_frontier);
+
+        bottom_up_step(graph, frontier, new_frontier, sol->distances);
+
+        vertex_inclusion_set* tmp = frontier;
+        frontier = new_frontier;
+        new_frontier = tmp;
+
+        frontier->count = 0;
+        for (int i = 0; i < frontier->max_vertices; i++) {
+            if (frontier->vertices[i]) {
+                frontier->count++;
+            }
+        }
+    }
 }
 
 void bfs_hybrid(Graph graph, solution* sol)
