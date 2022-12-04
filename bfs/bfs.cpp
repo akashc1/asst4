@@ -24,6 +24,7 @@ void vertex_set_init(vertex_set* list, int count) {
 
 void vertex_inclusion_set_clear(vertex_inclusion_set* list) {
     list->count = 0;
+    #pragma omp parallel for
     for (int i = 0; i < list->max_vertices; i++) {
         list->vertices[i] = false;
     }
@@ -134,7 +135,9 @@ void bottom_up_step(
     vertex_inclusion_set* new_frontier,
     int* distances)
 {
+    #pragma omp parallel for schedule(dynamic, 256)
     for (int n = 0; n < g->num_nodes; n++) {
+        // no need to consider already visited nodes
         if (distances[n] != NOT_VISITED_MARKER) {
             continue;
         }
@@ -142,6 +145,7 @@ void bottom_up_step(
         int start_edge = g->incoming_starts[n];
         int end_edge = (n== g->num_nodes - 1) ? g->num_edges : g->incoming_starts[n + 1];
 
+        // check for nodes which lead to this one, use their distance to compute this node's
         for (int neighbor = start_edge; neighbor < end_edge; neighbor++) {
             int incoming = g->incoming_edges[neighbor];
             if (frontier->vertices[incoming]) {
@@ -163,6 +167,7 @@ void bfs_bottom_up(Graph graph, solution* sol)
     vertex_inclusion_set* new_frontier = &list2;
 
     // initialize all nodes to NOT_VISITED
+    #pragma omp parallel for
     for (int i=0; i<graph->num_nodes; i++)
         sol->distances[i] = NOT_VISITED_MARKER;
 
@@ -181,12 +186,16 @@ void bfs_bottom_up(Graph graph, solution* sol)
         frontier = new_frontier;
         new_frontier = tmp;
 
+        // didn't synchonously count frontier so quickly add it up here
         frontier->count = 0;
+        int frontier_count = 0;
+        #pragma omp parallel for reduction(+:frontier_count)
         for (int i = 0; i < frontier->max_vertices; i++) {
             if (frontier->vertices[i]) {
-                frontier->count++;
+                frontier_count++;
             }
         }
+        frontier->count = frontier_count;
     }
 }
 
